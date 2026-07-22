@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="14개 생활 주제 3,360개 단어와 국가·수도 부록 197개를 담은 일상 영어 단어 카드 웹앱">
 <title>일상 영단어 14개 주제 | Everyday Vocab: 14 Topics</title>
-<meta name="app-build" content="gpt-20260721-everyday-vocab-14-topics-v2.6">
+<meta name="app-build" content="gpt-20260722-everyday-vocab-14-topics-v2.7-qr-share">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%236b1f2a'/%3E%3Crect x='14' y='16' width='30' height='34' rx='4' fill='%23f4ecdd' transform='rotate(-8 29 33)'/%3E%3Crect x='20' y='16' width='30' height='34' rx='4' fill='%23fbf7ee' stroke='%23c9a24a' stroke-width='2'/%3E%3Ctext x='35' y='40' font-family='Georgia,serif' font-size='22' font-weight='700' fill='%236b1f2a' text-anchor='middle'%3EE%3C/text%3E%3C/svg%3E">
 <style>
   :root{
@@ -141,6 +141,15 @@
   .state-message.error{color:var(--oxblood)}
   .state-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
   .state-modal-actions .btn{justify-content:center;min-width:72px}
+  .state-qr-panel{display:flex;flex-direction:column;align-items:center;gap:9px}
+  .state-qr-graphic{box-sizing:border-box;width:min(360px,100%);padding:10px;border:1px solid var(--hair);
+    border-radius:4px;background:#fff}
+  .state-qr-graphic svg{display:block;width:100%;height:auto}
+  .state-qr-note{color:var(--ink-soft);font-size:11.5px;line-height:1.5;text-align:center}
+  .share-toast{position:fixed;z-index:120;left:50%;bottom:24px;transform:translateX(-50%);
+    max-width:min(420px,calc(100% - 32px));padding:9px 13px;border-radius:4px;background:var(--ink);
+    color:var(--card);font-size:12px;box-shadow:0 8px 24px rgba(42,35,29,.2);text-align:center}
+  .share-toast.error{background:var(--oxblood)}
   body.modal-open{overflow:hidden}
 
   /* 낯섦·익힘·익숙 학습 상태 버튼 */
@@ -339,16 +348,192 @@
     <h2 id="stateModalTitle">학습 상태 저장</h2>
     <p id="stateModalHelp">아래 코드를 복사해 다른 기기에서 불러올 수 있어요.</p>
     <textarea class="state-code" id="stateCode" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="학습 상태 코드"></textarea>
+    <div class="state-qr-panel" id="stateQrPanel" hidden>
+      <div class="state-qr-graphic" id="stateQrGraphic"></div>
+      <div class="state-qr-note" id="stateQrNote">다른 기기의 카메라로 스캔하세요.</div>
+    </div>
     <div class="state-message" id="stateMessage" aria-live="polite"></div>
     <div class="state-modal-actions">
-      <button class="btn ghost" id="stateCancel" type="button">닫기</button>
+      <button class="btn ghost" id="stateQr" type="button" hidden>QR</button>
       <button class="btn" id="statePrimary" type="button">복사</button>
+      <button class="btn ghost" id="stateCancel" type="button">닫기</button>
     </div>
   </section>
 </div>
+<div class="share-toast" id="shareToast" role="status" aria-live="polite" hidden></div>
 
 <script>
 "use strict";
+
+/*
+  QR encoder portion adapted for this app from python-qrcode 8.2.
+  Copyright (c) 2011, Lincoln Loop. All rights reserved.
+
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+  1. Redistributions of source code must retain the above copyright notice,
+     this list of conditions and the following disclaimer.
+  2. Redistributions in binary form must reproduce the above copyright notice,
+     this list of conditions and the following disclaimer in the documentation
+     and/or other materials provided with the distribution.
+  3. Neither the package name nor the names of its contributors may be used to
+     endorse or promote products derived from this software without specific
+     prior written permission.
+
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED. IN NO EVENT SHALL THE
+  COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+  INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES.
+
+  Original QR implementation lineage includes Kazuhiko Arase's qrcode.js
+  (Copyright (c) 2009, MIT License).
+*/
+/* Minimal self-contained QR encoder for byte-mode URLs.
+   Algorithm follows ISO/IEC 18004 structure; tables derived from python-qrcode (BSD). */
+const MiniQR=(()=>{
+  const PATTERN_POSITION_TABLE=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]];
+  const RS_BLOCKS_L=[[1,26,19],[1,44,34],[1,70,55],[1,100,80],[1,134,108],[2,86,68],[2,98,78],[2,121,97],[2,146,116],[2,86,68,2,87,69],[4,101,81],[2,116,92,2,117,93],[4,133,107],[3,145,115,1,146,116],[5,109,87,1,110,88],[5,122,98,1,123,99],[1,135,107,5,136,108],[5,150,120,1,151,121],[3,141,113,4,142,114],[3,135,107,5,136,108],[4,144,116,4,145,117],[2,139,111,7,140,112],[4,151,121,5,152,122],[6,147,117,4,148,118],[8,132,106,4,133,107],[10,142,114,2,143,115],[8,152,122,4,153,123],[3,147,117,10,148,118],[7,146,116,7,147,117],[5,145,115,10,146,116],[13,145,115,3,146,116],[17,145,115],[17,145,115,1,146,116],[13,145,115,6,146,116],[12,151,121,7,152,122],[6,151,121,14,152,122],[17,152,122,4,153,123],[4,152,122,18,153,123],[20,147,117,4,148,118],[19,148,118,6,149,119]];
+  const G15=(1<<10)|(1<<8)|(1<<5)|(1<<4)|(1<<2)|(1<<1)|1;
+  const G18=(1<<12)|(1<<11)|(1<<10)|(1<<9)|(1<<8)|(1<<5)|(1<<2)|1;
+  const G15_MASK=(1<<14)|(1<<12)|(1<<10)|(1<<4)|(1<<1);
+  const EXP=new Array(512).fill(0),LOG=new Array(256).fill(0);
+  for(let i=0;i<8;i++)EXP[i]=1<<i;
+  for(let i=8;i<256;i++)EXP[i]=EXP[i-4]^EXP[i-5]^EXP[i-6]^EXP[i-8];
+  for(let i=0;i<255;i++)LOG[EXP[i]]=i;
+  for(let i=255;i<512;i++)EXP[i]=EXP[i-255];
+  const gexp=n=>EXP[((n%255)+255)%255];
+  const glog=n=>{if(n<1)throw new Error("glog");return LOG[n];};
+  function polyMul(a,b){
+    const out=new Array(a.length+b.length-1).fill(0);
+    for(let i=0;i<a.length;i++)if(a[i])for(let j=0;j<b.length;j++)if(b[j])out[i+j]^=gexp(glog(a[i])+glog(b[j]));
+    return out;
+  }
+  function rsRemainder(data,ecCount){
+    let gen=[1];
+    for(let i=0;i<ecCount;i++)gen=polyMul(gen,[1,gexp(i)]);
+    const msg=data.concat(new Array(ecCount).fill(0));
+    for(let i=0;i<data.length;i++){
+      const factor=msg[i];
+      if(!factor)continue;
+      const lf=glog(factor);
+      for(let j=0;j<gen.length;j++)if(gen[j])msg[i+j]^=gexp(lf+glog(gen[j]));
+    }
+    return msg.slice(data.length);
+  }
+  function rsBlocks(version){
+    const raw=RS_BLOCKS_L[version-1],out=[];
+    for(let i=0;i<raw.length;i+=3)for(let n=0;n<raw[i];n++)out.push({total:raw[i+1],data:raw[i+2]});
+    return out;
+  }
+  class BitBuffer{
+    constructor(){this.bytes=[];this.length=0;}
+    put(num,len){for(let i=0;i<len;i++)this.putBit(((num>>(len-i-1))&1)!==0);}
+    putBit(bit){const bi=this.length>>3;if(this.bytes.length<=bi)this.bytes.push(0);if(bit)this.bytes[bi]|=0x80>>(this.length&7);this.length++;}
+  }
+  function createCodewords(version,input){
+    const blocks=rsBlocks(version),buf=new BitBuffer();
+    buf.put(4,4); // byte mode
+    buf.put(input.length,version<10?8:16);
+    for(const b of input)buf.put(b,8);
+    const bitLimit=blocks.reduce((s,b)=>s+b.data*8,0);
+    if(buf.length>bitLimit)throw new Error("QR 데이터가 너무 깁니다.");
+    for(let i=0;i<Math.min(bitLimit-buf.length,4);i++)buf.putBit(false);
+    while(buf.length%8)buf.putBit(false);
+    let pad=0;
+    while(buf.length<bitLimit){buf.put(pad++%2===0?0xEC:0x11,8);}
+    let offset=0,maxDc=0,maxEc=0;
+    const dc=[],ec=[];
+    for(const block of blocks){
+      const d=buf.bytes.slice(offset,offset+block.data);offset+=block.data;
+      const e=rsRemainder(d,block.total-block.data);
+      dc.push(d);ec.push(e);maxDc=Math.max(maxDc,d.length);maxEc=Math.max(maxEc,e.length);
+    }
+    const out=[];
+    for(let i=0;i<maxDc;i++)for(const d of dc)if(i<d.length)out.push(d[i]);
+    for(let i=0;i<maxEc;i++)for(const e of ec)if(i<e.length)out.push(e[i]);
+    return out;
+  }
+  function bchDigit(x){let n=0;while(x){n++;x>>>=1;}return n;}
+  function bchTypeInfo(data){let d=data<<10;while(bchDigit(d)-bchDigit(G15)>=0)d^=G15<<(bchDigit(d)-bchDigit(G15));return ((data<<10)|d)^G15_MASK;}
+  function bchTypeNumber(data){let d=data<<12;while(bchDigit(d)-bchDigit(G18)>=0)d^=G18<<(bchDigit(d)-bchDigit(G18));return (data<<12)|d;}
+  function mask(pattern,i,j){
+    switch(pattern){
+      case 0:return (i+j)%2===0;case 1:return i%2===0;case 2:return j%3===0;case 3:return (i+j)%3===0;
+      case 4:return (Math.floor(i/2)+Math.floor(j/3))%2===0;case 5:return (i*j)%2+(i*j)%3===0;
+      case 6:return ((i*j)%2+(i*j)%3)%2===0;case 7:return ((i*j)%3+(i+j)%2)%2===0;
+    }
+  }
+  function setupProbe(m,row,col){
+    const n=m.length;
+    for(let r=-1;r<=7;r++){if(row+r<0||row+r>=n)continue;for(let c=-1;c<=7;c++){if(col+c<0||col+c>=n)continue;
+      m[row+r][col+c]=((r>=0&&r<=6&&(c===0||c===6))||(c>=0&&c<=6&&(r===0||r===6))||(r>=2&&r<=4&&c>=2&&c<=4));
+    }}
+  }
+  function setupAdjust(m,version){
+    const pos=PATTERN_POSITION_TABLE[version-1];
+    for(const row of pos)for(const col of pos){if(m[row][col]!==null)continue;for(let r=-2;r<=2;r++)for(let c=-2;c<=2;c++)m[row+r][col+c]=(Math.abs(r)===2||Math.abs(c)===2||(r===0&&c===0));}
+  }
+  function setupTiming(m){const n=m.length;for(let r=8;r<n-8;r++)if(m[r][6]===null)m[r][6]=r%2===0;for(let c=8;c<n-8;c++)if(m[6][c]===null)m[6][c]=c%2===0;}
+  function setupTypeInfo(m,test,maskPattern){
+    const n=m.length,bits=bchTypeInfo((1<<3)|maskPattern); // L=1
+    for(let i=0;i<15;i++){
+      const mod=!test&&((bits>>i)&1)===1;
+      if(i<6)m[i][8]=mod;else if(i<8)m[i+1][8]=mod;else m[n-15+i][8]=mod;
+    }
+    for(let i=0;i<15;i++){
+      const mod=!test&&((bits>>i)&1)===1;
+      if(i<8)m[8][n-i-1]=mod;else if(i<9)m[8][15-i]=mod;else m[8][15-i-1]=mod;
+    }
+    m[n-8][8]=!test;
+  }
+  function setupTypeNumber(m,version,test){
+    const n=m.length,bits=bchTypeNumber(version);
+    for(let i=0;i<18;i++){const mod=!test&&((bits>>i)&1)===1;m[Math.floor(i/3)][i%3+n-11]=mod;m[i%3+n-11][Math.floor(i/3)]=mod;}
+  }
+  function mapData(m,data,maskPattern){
+    const n=m.length;let inc=-1,row=n-1,bitIndex=7,byteIndex=0;
+    for(let col=n-1;col>0;col-=2){if(col===6)col--;
+      while(true){for(let c=0;c<2;c++){const x=col-c;if(m[row][x]!==null)continue;let dark=false;if(byteIndex<data.length)dark=((data[byteIndex]>>>bitIndex)&1)===1;if(mask(maskPattern,row,x))dark=!dark;m[row][x]=dark;if(--bitIndex<0){byteIndex++;bitIndex=7;}}
+        row+=inc;if(row<0||row>=n){row-=inc;inc=-inc;break;}
+      }
+    }
+  }
+  function makeMatrix(version,data,test,maskPattern){
+    const n=version*4+17,m=Array.from({length:n},()=>Array(n).fill(null));
+    setupProbe(m,0,0);setupProbe(m,n-7,0);setupProbe(m,0,n-7);setupAdjust(m,version);setupTiming(m);setupTypeInfo(m,test,maskPattern);if(version>=7)setupTypeNumber(m,version,test);mapData(m,data,maskPattern);return m;
+  }
+  function lostPoint(m){
+    const n=m.length;let score=0,dark=0;
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(m[r][c])dark++;
+    for(let r=0;r<n;r++){let color=m[r][0],run=1;for(let c=1;c<n;c++){if(m[r][c]===color)run++;else{if(run>=5)score+=run-2;color=m[r][c];run=1;}}if(run>=5)score+=run-2;}
+    for(let c=0;c<n;c++){let color=m[0][c],run=1;for(let r=1;r<n;r++){if(m[r][c]===color)run++;else{if(run>=5)score+=run-2;color=m[r][c];run=1;}}if(run>=5)score+=run-2;}
+    for(let r=0;r<n-1;r++)for(let c=0;c<n-1;c++){const v=m[r][c];if(m[r][c+1]===v&&m[r+1][c]===v&&m[r+1][c+1]===v)score+=3;}
+    const p1=[true,false,true,true,true,false,true,false,false,false,false],p2=[false,false,false,false,true,false,true,true,true,false,true];
+    const match=(arr,start,p)=>{for(let k=0;k<11;k++)if(arr[start+k]!==p[k])return false;return true;};
+    for(let r=0;r<n;r++)for(let c=0;c<=n-11;c++)if(match(m[r],c,p1)||match(m[r],c,p2))score+=40;
+    for(let c=0;c<n;c++){const col=new Array(n);for(let r=0;r<n;r++)col[r]=m[r][c];for(let r=0;r<=n-11;r++)if(match(col,r,p1)||match(col,r,p2))score+=40;}
+    score+=Math.floor(Math.abs(dark*100/(n*n)-50)/5)*10;
+    return score;
+  }
+  function encode(text){
+    const bytes=new TextEncoder().encode(String(text));let version=0;
+    for(let v=1;v<=40;v++){
+      const bits=4+(v<10?8:16)+bytes.length*8;
+      const cap=rsBlocks(v).reduce((s,b)=>s+b.data*8,0);
+      if(bits<=cap){version=v;break;}
+    }
+    if(!version)throw new Error("QR 데이터가 너무 깁니다.");
+    const codewords=createCodewords(version,bytes);let best=0,bestScore=Infinity;
+    for(let i=0;i<8;i++){const m=makeMatrix(version,codewords,true,i),s=lostPoint(m);if(s<bestScore){bestScore=s;best=i;}}
+    return {version,modules:makeMatrix(version,codewords,false,best)};
+  }
+  function toSvg(text){
+    const {modules,version}=encode(text),n=modules.length,margin=4,size=n+margin*2;let path="";
+    for(let r=0;r<n;r++)for(let c=0;c<n;){if(!modules[r][c]){c++;continue;}let start=c;while(c<n&&modules[r][c])c++;path+=`M${start+margin} ${r+margin}h${c-start}v1h-${c-start}z`;}
+    return {version,moduleCount:n,svg:`<svg viewBox="0 0 ${size} ${size}" role="img" aria-label="학습 상태 공유 QR 코드" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg"><rect width="${size}" height="${size}" fill="#fff"/><path d="${path}" fill="#000"/></svg>`};
+  }
+  return {encode,toSvg};
+})();
 
 /* 내장 단어장 식별자 — 카드마다 반복하지 않고 앱 전역에서 한 번만 관리 */
 const DATASET_ID = "everyday-vocab-14-topics-3557-v2.6";
@@ -413,6 +598,7 @@ const VALID_STATUS = ["unknown","unsure","known"];
 let cardStates = {};              // 희소 객체: 사용자가 학습 상태를 지정한 카드만 { id: {status, updatedAt} }
 let currentCardId = null;         // 현재 보고 있는 카드의 고정 ID
 const validCardIds = new Set(EMBED.map(d=>d.id));  // 존재하는 카드 ID 검증용
+const cardNumberById = new Map(EMBED.map((d,i)=>[d.id,i+1])); // 현재 목차 순서의 전체 고정 번호
 
 /* ---- 학습 상태 공유 코드 (EVK1) ----
    희소 기록은 간격 기반 가변 길이로, 기록이 많으면 2비트 고정 길이로 저장한다.
@@ -651,6 +837,11 @@ function setRich(node,text){
 }
 // 볼드 마크업을 제거한 평문 (TTS·검색·비교용)
 function stripBold(text){return String(text||"").replace(/\*\*/g,"");}
+// 현재 목차 순서에서의 전체 단어 번호. 필터가 바뀌어도 같은 앱 버전 안에서는 유지된다.
+function getCardNumber(id){
+  const value=cardNumberById.get(id);
+  return Number.isInteger(value) ? value : null;
+}
 const POS_FULL={관:"관사",동:"동사",형:"형용사",명:"명사",부:"부사",전:"전치사",접:"접속사",대:"대명사",감:"감탄사",구:"구·표현"};
 function posFull(pos){return String(pos||"").split("/").map(x=>POS_FULL[x]||x).join("·");}
 
@@ -778,7 +969,9 @@ function renderCard(){
   // 현재 카드 ID 저장 (이어보기)
   if(d.id && currentCardId!==d.id){ currentCardId=d.id; saveState(); }
 
-  counter.textContent=(pos+1).toLocaleString()+" / "+cards.length.toLocaleString();
+  const cardNumber=getCardNumber(d.id);
+  counter.textContent=(pos+1).toLocaleString()+" / "+cards.length.toLocaleString()
+    +(cardNumber!==null ? " · #"+cardNumber.toLocaleString() : "");
   bar.style.width=((pos+1)/cards.length*100)+"%";
 }
 
@@ -1158,7 +1351,7 @@ document.addEventListener("click",e=>{
   if(!e.target.closest(".search-wrap")) suggestEl.hidden=true;
 });
 
-/* ---- 학습 상태 초기화 · 불러오기 · 저장 ---- */
+/* ---- 학습 상태 초기화 · 불러오기 · 저장 · QR 공유 ---- */
 const loadBtn=document.getElementById("loadProgress");
 const saveBtn=document.getElementById("saveProgress");
 const stateModal=document.getElementById("stateModal");
@@ -1166,33 +1359,108 @@ const stateDialog=stateModal.querySelector(".state-dialog");
 const stateModalTitle=document.getElementById("stateModalTitle");
 const stateModalHelp=document.getElementById("stateModalHelp");
 const stateCode=document.getElementById("stateCode");
+const stateQrPanel=document.getElementById("stateQrPanel");
+const stateQrGraphic=document.getElementById("stateQrGraphic");
+const stateQrNote=document.getElementById("stateQrNote");
+const stateQr=document.getElementById("stateQr");
 const stateMessage=document.getElementById("stateMessage");
 const stateCancel=document.getElementById("stateCancel");
 const statePrimary=document.getElementById("statePrimary");
+const shareToast=document.getElementById("shareToast");
 let stateModalMode="save";
+let stateModalView="code";
+let stateShareUrl="";
+let stateShareIsLink=false;
 let stateModalReturnFocus=null;
+let shareToastTimer=0;
 
 function setStateMessage(text,isError=false){
   stateMessage.textContent=text||"";
   stateMessage.classList.toggle("error",!!isError);
 }
+function showShareToast(text,isError=false){
+  clearTimeout(shareToastTimer);
+  shareToast.textContent=text;
+  shareToast.classList.toggle("error",!!isError);
+  shareToast.hidden=false;
+  shareToastTimer=setTimeout(()=>{shareToast.hidden=true;},3600);
+}
+function makeStateSharePayload(code){
+  const isWeb=location.protocol==="https:" || location.protocol==="http:";
+  if(!isWeb){
+    // 로컬 파일과 ChatGPT 미리보기에서도 QR 생성 자체는 바로 시험할 수 있다.
+    // 다만 다른 기기에서 열 수 있는 공개 주소가 없으므로 저장 코드만 담는다.
+    return {text:code,isLink:false};
+  }
+  const url=new URL(location.href);
+  url.search="";
+  url.hash="";
+  return {text:url.toString()+"#s="+code,isLink:true};
+}
+function showCodeView(){
+  stateModalView="code";
+  stateCode.hidden=false;
+  stateQrPanel.hidden=true;
+  stateQr.textContent="QR";
+  stateModalHelp.textContent="아래 코드를 복사해 다른 기기에서 불러올 수 있어요.";
+  setStateMessage("");
+  requestAnimationFrame(()=>{stateCode.focus();stateCode.select();});
+}
+function showQrView(){
+  try{
+    const share=makeStateSharePayload(stateCode.value);
+    stateShareUrl=share.text;
+    stateShareIsLink=share.isLink;
+    const qr=MiniQR.toSvg(stateShareUrl);
+    stateQrGraphic.innerHTML=qr.svg;
+    if(!share.isLink){
+      stateQrNote.textContent="로컬 테스트용 QR이에요. 학습 상태 코드만 담겨 있어 웹페이지로 자동 이동하지 않아요.";
+    }else if(qr.moduleCount>=105){
+      stateQrNote.textContent="학습 기록이 많아 QR이 촘촘해요. 화면 밝기를 높이고 정면에서 스캔하세요.";
+    }else{
+      stateQrNote.textContent="다른 기기의 카메라로 스캔하세요.";
+    }
+  }catch(e){
+    setStateMessage(e && e.message ? e.message : "QR 코드를 만들 수 없어요.",true);
+    return;
+  }
+  stateModalView="qr";
+  stateCode.hidden=true;
+  stateQrPanel.hidden=false;
+  stateQr.textContent="코드";
+  stateModalHelp.textContent=stateShareIsLink
+    ? "카메라로 스캔하면 이 웹앱이 열리고 학습 상태가 자동으로 불러와져요."
+    : "QR 생성과 스캔을 바로 시험할 수 있어요. 자동 이동 기능은 GitHub Pages 주소에서 동작해요.";
+  setStateMessage("");
+}
 function openStateModal(mode){
   stateModalMode=mode;
+  stateModalView="code";
+  stateShareUrl="";
+  stateShareIsLink=false;
   stateModalReturnFocus=document.activeElement;
+  stateQrGraphic.innerHTML="";
+  stateQrPanel.hidden=true;
   setStateMessage("");
   if(mode==="save"){
     stateModalTitle.textContent="학습 상태 저장";
     stateModalHelp.textContent="아래 코드를 복사해 다른 기기에서 불러올 수 있어요.";
+    stateCode.hidden=false;
     stateCode.value=makeShareCode();
     stateCode.readOnly=true;
+    stateCode.placeholder="";
+    stateQr.hidden=false;
+    stateQr.textContent="QR";
     statePrimary.textContent="복사";
     stateCancel.textContent="닫기";
   }else{
     stateModalTitle.textContent="학습 상태 불러오기";
     stateModalHelp.textContent="다른 기기에서 저장한 코드를 붙여 넣으세요. 현재 학습 상태는 코드의 내용으로 바뀝니다.";
+    stateCode.hidden=false;
     stateCode.value="";
     stateCode.readOnly=false;
     stateCode.placeholder="EVK1로 시작하는 학습 상태 코드";
+    stateQr.hidden=true;
     statePrimary.textContent="불러오기";
     stateCancel.textContent="취소";
   }
@@ -1206,11 +1474,13 @@ function openStateModal(mode){
 function closeStateModal(){
   stateModal.hidden=true;
   document.body.classList.remove("modal-open");
+  stateQrGraphic.innerHTML="";
+  stateShareUrl="";
+  stateShareIsLink=false;
   setStateMessage("");
   if(stateModalReturnFocus && typeof stateModalReturnFocus.focus==="function") stateModalReturnFocus.focus();
 }
-async function copyStateCode(){
-  const text=stateCode.value;
+async function copyText(text,successMessage){
   let copied=false;
   try{
     if(navigator.clipboard && window.isSecureContext){
@@ -1219,10 +1489,34 @@ async function copyStateCode(){
     }
   }catch(e){ /* 아래 선택 복사로 대체 */ }
   if(!copied){
-    stateCode.focus();stateCode.select();
+    const fallback=stateModalView==="code" ? stateCode : document.createElement("textarea");
+    if(stateModalView!=="code"){
+      fallback.value=text;
+      fallback.setAttribute("readonly","");
+      fallback.style.position="fixed";
+      fallback.style.opacity="0";
+      document.body.appendChild(fallback);
+    }
+    fallback.focus();fallback.select();
     try{copied=document.execCommand("copy");}catch(e){copied=false;}
+    if(stateModalView!=="code") fallback.remove();
   }
-  setStateMessage(copied ? "복사했어요." : "코드를 선택해 직접 복사해 주세요.",!copied);
+  setStateMessage(copied ? successMessage : "복사하지 못했어요. 다시 시도해 주세요.",!copied);
+}
+function copyStateCode(){
+  if(stateModalView==="qr"){
+    if(!stateShareUrl){
+      const share=makeStateSharePayload(stateCode.value);
+      stateShareUrl=share.text;
+      stateShareIsLink=share.isLink;
+    }
+    copyText(
+      stateShareUrl,
+      stateShareIsLink ? "공유 링크를 복사했어요." : "학습 상태 코드를 복사했어요."
+    );
+  }else{
+    copyText(stateCode.value,"복사했어요.");
+  }
 }
 function importStateCode(){
   let next;
@@ -1235,6 +1529,29 @@ function importStateCode(){
   applyFilter(keepId);
   closeStateModal();
 }
+function sharedCodeFromHash(){
+  if(!location.hash.startsWith("#s=")) return null;
+  if(location.hash.length>5000) throw new Error("공유 주소가 너무 깁니다.");
+  return decodeURIComponent(location.hash.slice(3));
+}
+function clearShareHash(){
+  try{history.replaceState(null,"",location.pathname+location.search);}catch(e){location.hash="";}
+}
+function consumeSharedStateFromHash(){
+  let raw;
+  try{raw=sharedCodeFromHash();}
+  catch(e){clearShareHash();return {ok:false,message:"QR의 학습 상태 주소가 올바르지 않아요."};}
+  if(raw===null) return null;
+  try{
+    cardStates=decodeShareCode(raw);
+    saveState();
+    clearShareHash();
+    return {ok:true,message:"QR에서 학습 상태를 불러왔어요."};
+  }catch(e){
+    clearShareHash();
+    return {ok:false,message:"QR의 학습 상태 코드가 올바르지 않아요."};
+  }
+}
 
 resetBtn.addEventListener("click",()=>{
   const keepId=currentCardId;
@@ -1246,6 +1563,10 @@ resetBtn.addEventListener("click",()=>{
 });
 loadBtn.addEventListener("click",()=>openStateModal("load"));
 saveBtn.addEventListener("click",()=>openStateModal("save"));
+stateQr.addEventListener("click",()=>{
+  if(stateModalView==="qr") showCodeView();
+  else showQrView();
+});
 stateCancel.addEventListener("click",closeStateModal);
 statePrimary.addEventListener("click",()=>{
   if(stateModalMode==="save") copyStateCode();
@@ -1258,7 +1579,8 @@ stateModal.addEventListener("keydown",e=>{
     e.preventDefault();importStateCode();return;
   }
   if(e.key==="Tab"){
-    const focusable=[...stateDialog.querySelectorAll('textarea,button:not([disabled])')];
+    const focusable=[...stateDialog.querySelectorAll('textarea,button:not([disabled])')]
+      .filter(el=>!el.hidden && el.offsetParent!==null);
     if(!focusable.length)return;
     const first=focusable[0],last=focusable[focusable.length-1];
     if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}
@@ -1286,14 +1608,16 @@ function syncSettingsUI(){
 
 /* ---- first paint ---- */
 loadState();          // 1) 저장된 설정·기록 복원 (검증 포함, 실패해도 기본값)
+const sharedImportResult=consumeSharedStateFromHash(); // 2) QR 공유 주소가 있으면 학습 상태만 복원
 start(EMBED.map(d=>({
   id:d.id||"",word:d.word||"",ipa:d.ipa||"",kr:d.kr||"",
   pos:d.pos||"",mean:d.mean||"",ex:Array.isArray(d.ex)?d.ex:[],
   category:d.category||"",chapter:d.chapter||"",categoryCode:d.categoryCode||"",
   categoryEn:d.categoryEn||"",categoryKo:d.categoryKo||"",chapterKo:d.chapterKo||""
 })));
-syncSettingsUI();     // 3) 설정 버튼 UI 동기화
-renderStatusBar();    // 4) 학습 현황 표시
+syncSettingsUI();     // 4) 설정 버튼 UI 동기화
+renderStatusBar();    // 5) 학습 현황 표시
+if(sharedImportResult) requestAnimationFrame(()=>showShareToast(sharedImportResult.message,!sharedImportResult.ok));
 </script>
 </body>
 </html>
