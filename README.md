@@ -8,8 +8,6 @@
 
 [**웹앱에서 학습하기**](https://kkongkkong2da.github.io/everyday-vocab-14-topics/)
 
-> GitHub Pages 배포가 완료된 뒤 위 주소에서 바로 사용할 수 있습니다.
-
 ---
 
 ## 이런 학습자에게 잘 맞습니다
